@@ -1,29 +1,45 @@
 ARG NOTION_PAGE_ID
 ARG NEXT_PUBLIC_THEME
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 
 FROM node:20-alpine AS base
 
 # 1. Install dependencies only when needed
 FROM base AS deps
+
+ARG NPM_REGISTRY
+
 # Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
 RUN apk add --no-cache libc6-compat
+
 WORKDIR /app
-COPY package.json ./
-RUN yarn install --frozen-lockfile
+
+COPY package.json yarn.lock ./
+
+RUN yarn config set registry ${NPM_REGISTRY} \
+    && yarn config set network-timeout 600000 \
+    && yarn install --frozen-lockfile
 
 # 2. Rebuild the source code only when needed
 FROM base AS builder
+
 ARG NOTION_PAGE_ID
+ARG NEXT_PUBLIC_THEME
+
 ENV NEXT_BUILD_STANDALONE=true
+ENV NOTION_PAGE_ID=${NOTION_PAGE_ID}
+ENV NEXT_PUBLIC_THEME=${NEXT_PUBLIC_THEME}
 
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
 RUN yarn build
 
 # 3. Production image, copy all the files and run next
 FROM base AS runner
+
 ENV NODE_ENV=production
 
 WORKDIR /app
